@@ -1,0 +1,19 @@
+
+# .NET build output
+**/bin/
+**/obj/
+
+# Local configuration and secrets
+**/appsettings.Local.json
+.env
+.env.*
+
+# Frontend dependencies and build output
+**/node_modules/
+**/dist/
+
+# IDE and operating-system files
+.vs/
+.vscode/
+.DS_Store
+Thumbs.db
