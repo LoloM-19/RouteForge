@@ -1,6 +1,7 @@
 
 using RouteForge.Api.Models;
 using RouteForge.Api.Services;
+using RouteForge.Api.DTOs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,26 +36,35 @@ app.MapGet("/api/locations/{id:int}", (int id, DeliveryLocationService service) 
 });
 
 // POST: Create a delivery location.
-app.MapPost("/api/locations", (DeliveryLocation location, DeliveryLocationService service) =>
+app.MapPost("/api/locations", (
+    CreateDeliveryLocationRequest request,
+    DeliveryLocationService service) =>
 {
-    if (string.IsNullOrWhiteSpace(location.Name))
+    if (string.IsNullOrWhiteSpace(request.Name))
     {
         return Results.BadRequest("Location name is required.");
     }
 
-    if (!double.IsFinite(location.Latitude) ||
-        location.Latitude < -90 ||
-        location.Latitude > 90)
+    if (!double.IsFinite(request.Latitude) ||
+        request.Latitude < -90 ||
+        request.Latitude > 90)
     {
         return Results.BadRequest("Latitude must be between -90 and 90.");
     }
 
-    if (!double.IsFinite(location.Longitude) ||
-        location.Longitude < -180 ||
-        location.Longitude > 180)
+    if (!double.IsFinite(request.Longitude) ||
+        request.Longitude < -180 ||
+        request.Longitude > 180)
     {
         return Results.BadRequest("Longitude must be between -180 and 180.");
     }
+
+    var location = new DeliveryLocation
+    {
+        Name = request.Name.Trim(),
+        Latitude = request.Latitude,
+        Longitude = request.Longitude
+    };
 
     var createdLocation = service.Create(location);
 
@@ -64,3 +74,5 @@ app.MapPost("/api/locations", (DeliveryLocation location, DeliveryLocationServic
 });
 
 app.Run();
+
+public partial class Program { }
