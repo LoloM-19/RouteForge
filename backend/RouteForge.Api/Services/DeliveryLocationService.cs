@@ -1,45 +1,79 @@
 
+using Microsoft.EntityFrameworkCore;
+using RouteForge.Api.Data;
 using RouteForge.Api.Models;
 
 namespace RouteForge.Api.Services;
 
 public class DeliveryLocationService
 {
-    private readonly List<DeliveryLocation> _locations = new()
-    {
-        new DeliveryLocation
-        {
-            Id = 1,
-            Name = "Johannesburg Warehouse",
-            Latitude = -26.2041,
-            Longitude = 28.0473
-        },
-        new DeliveryLocation
-        {
-            Id = 2,
-            Name = "Sandton Delivery Hub",
-            Latitude = -26.1076,
-            Longitude = 28.0567
-        }
-    };
+    private readonly RouteForgeDbContext _context;
 
-    private int _nextId = 3;
-
-    public List<DeliveryLocation> GetAll()
+    public DeliveryLocationService(RouteForgeDbContext context)
     {
-        return _locations;
+        _context = context;
     }
 
-    public DeliveryLocation? GetById(int id)
+    public async Task<List<DeliveryLocation>> GetAllAsync()
     {
-        return _locations.FirstOrDefault(location => location.Id == id);
+        return await _context.DeliveryLocations
+            .AsNoTracking()
+            .ToListAsync();
     }
 
-    public DeliveryLocation Create(DeliveryLocation location)
+    public async Task<DeliveryLocation?> GetByIdAsync(int id)
     {
-        location.Id = _nextId++;
-        _locations.Add(location);
+        return await _context.DeliveryLocations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(location => location.Id == id);
+    }
+
+    public async Task<DeliveryLocation> CreateAsync(
+        DeliveryLocation location)
+    {
+        _context.DeliveryLocations.Add(location);
+
+        await _context.SaveChangesAsync();
 
         return location;
+    }
+
+        
+    public async Task<DeliveryLocation?> UpdateAsync(
+        int id,
+        DeliveryLocation updatedLocation)
+    {
+        var existingLocation = await _context.DeliveryLocations
+            .FirstOrDefaultAsync(location => location.Id == id);
+
+        if (existingLocation is null)
+        {
+            return null;
+        }
+
+        existingLocation.Name = updatedLocation.Name;
+        existingLocation.Latitude = updatedLocation.Latitude;
+        existingLocation.Longitude = updatedLocation.Longitude;
+
+        await _context.SaveChangesAsync();
+
+        return existingLocation;
+    }
+
+    public async Task<bool> DeleteAsync(int id)
+    {
+        var location = await _context.DeliveryLocations
+            .FirstOrDefaultAsync(location => location.Id == id);
+
+        if (location is null)
+        {
+            return false;
+        }
+
+        _context.DeliveryLocations.Remove(location);
+
+        await _context.SaveChangesAsync();
+
+        return true;
     }
 }
