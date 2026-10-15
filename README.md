@@ -179,4 +179,15 @@ RouteForge/
 │   │   ├── Models/
 │   │   ├── Optimization/
 │   │   ├── Services/
-│   │
+│   │   └── Program.cs
+│   └── RouteForge.Api.Tests/
+│       ├── IntegrationTests/
+│       ├── Optimization/
+│       └── UnitTest1.cs
+├── frontend/
+│   └── src/
+│       ├── components/
+│       ├── services/
+│       └── ...
+├── RouteForge.slnx
+└── .gitignore
