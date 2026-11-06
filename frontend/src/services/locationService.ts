@@ -6,6 +6,7 @@ export interface DeliveryLocation {
   name: string;
   latitude: number;
   longitude: number;
+  type: number;
 }
 
 export async function getLocations(): Promise<DeliveryLocation[]> {

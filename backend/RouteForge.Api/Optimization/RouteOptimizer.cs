@@ -1,3 +1,4 @@
+
 using RouteForge.Api.Models;
 
 namespace RouteForge.Api.Optimization;
@@ -11,6 +12,7 @@ public class RouteOptimizer
         return OptimizeRoute(
             warehouse,
             deliveryStops,
+            warehouse,
             DistanceCalculator.CalculateDistanceKm);
     }
 
@@ -19,9 +21,22 @@ public class RouteOptimizer
         List<DeliveryLocation> deliveryStops,
         Func<DeliveryLocation, DeliveryLocation, double> getDistanceKm)
     {
-        // Preserve the supplied order to calculate the baseline distance.
+        return OptimizeRoute(
+            warehouse,
+            deliveryStops,
+            warehouse,
+            getDistanceKm);
+    }
+
+    public RouteOptimizationResult OptimizeRoute(
+        DeliveryLocation start,
+        List<DeliveryLocation> deliveryStops,
+        DeliveryLocation end,
+        Func<DeliveryLocation, DeliveryLocation, double> getDistanceKm)
+    {
+        // Calculate the baseline distance using the supplied stop order.
         double originalDistanceKm = 0;
-        var originalCurrentLocation = warehouse;
+        var originalCurrentLocation = start;
 
         foreach (var stop in deliveryStops)
         {
@@ -32,16 +47,15 @@ public class RouteOptimizer
             originalCurrentLocation = stop;
         }
 
-        // Include the return journey in the original distance.
         originalDistanceKm += getDistanceKm(
             originalCurrentLocation,
-            warehouse);
+            end);
 
         // Create a separate list so we don't modify the input list.
         var unvisitedStops = new List<DeliveryLocation>(deliveryStops);
         var optimizedRoute = new List<DeliveryLocation>();
 
-        var currentLocation = warehouse;
+        var currentLocation = start;
         double totalDistanceKm = 0;
 
         // Repeatedly select the nearest unvisited delivery stop.
@@ -63,10 +77,8 @@ public class RouteOptimizer
             unvisitedStops.Remove(nearestStop.Location);
         }
 
-        // Include the return journey in the optimized distance.
-        totalDistanceKm += getDistanceKm(
-            currentLocation,
-            warehouse);
+        // Finish at the selected destination, not necessarily the start.
+        totalDistanceKm += getDistanceKm(currentLocation, end);
 
         return new RouteOptimizationResult
         {

@@ -55,138 +55,117 @@ public DeliveryLocationsApiTests(DeliveryLocationsApiFactory factory)
 } //Constructor ends here!
 
 
-    [Fact]
-    public async Task OptimizeRoute_Uses2OptToImproveRoute()
+
+[Fact]
+public async Task OptimizeRoute_Uses2OptToImproveRoute()
+{
+    // Arrange: define a warehouse, four delivery stops and a return point.
+    var request = new
     {
-        // Arrange: create a warehouse and four delivery stops.
-        var warehouse = new
-        {
-            Name = "Test Warehouse",
-            Latitude = 0.0,
-            Longitude = 0.0
-        };
+        StartLatitude = 0.0,
+        StartLongitude = 0.0,
+        StartName = "Test Warehouse",
 
-        var warehouseResponse = await _client.PostAsJsonAsync(
-            "/api/locations", warehouse);
+        EndLatitude = 0.0,
+        EndLongitude = 0.0,
+        EndName = "Test Warehouse",
 
-        warehouseResponse.EnsureSuccessStatusCode();
-
-        var createdWarehouse = await warehouseResponse.Content
-            .ReadFromJsonAsync<DeliveryLocation>();
-
-        Assert.NotNull(createdWarehouse);
-
-        var stops = new[]
+        Stops = new[]
         {
             new { Name = "Stop A", Latitude = 0.0, Longitude = 2.0 },
             new { Name = "Stop B", Latitude = 2.0, Longitude = 0.0 },
             new { Name = "Stop C", Latitude = 2.0, Longitude = 2.0 },
             new { Name = "Stop D", Latitude = 0.0, Longitude = 1.0 }
-        };
-
-        var stopIds = new List<int>();
-
-        foreach (var stop in stops)
-        {
-            var createResponse = await _client.PostAsJsonAsync(
-                "/api/locations", stop);
-
-            createResponse.EnsureSuccessStatusCode();
-
-            var createdStop = await createResponse.Content
-                .ReadFromJsonAsync<DeliveryLocation>();
-
-            Assert.NotNull(createdStop);
-            stopIds.Add(createdStop.Id);
         }
+    };
 
-        // Act: request the stops in a deliberately inefficient order.
-        var request = new
-        {
-            WarehouseId = createdWarehouse.Id,
-            DeliveryLocationIds = stopIds
-        };
+    // Act
+    var response = await _client.PostAsJsonAsync(
+        "/api/routes/optimize", request);
 
-        var response = await _client.PostAsJsonAsync(
-            "/api/routes/optimize", request);
+    // Assert
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    var result = await response.Content
+        .ReadFromJsonAsync<RouteOptimizationResult>();
 
-        var result = await response.Content
-            .ReadFromJsonAsync<RouteOptimizationResult>();
+    Assert.NotNull(result);
+    Assert.Equal(4, result.OptimizedRoute.Count);
 
-        Assert.NotNull(result);
-        Assert.Equal(stops.Length, result.OptimizedRoute.Count);
-        Assert.True(result.TotalDistanceKm > 0);
-        Assert.True(result.OriginalDistanceKm > 0);
-            
-        Assert.True(result.NearestNeighbourDistanceKm > 0);
+    Assert.True(result.TotalDistanceKm > 0);
+    Assert.True(result.OriginalDistanceKm > 0);
+    Assert.True(result.NearestNeighbourDistanceKm > 0);
 
-        // 2-opt should not increase the route distance.
-        Assert.True(
-            result.TotalDistanceKm <= result.NearestNeighbourDistanceKm + 1e-8);
+    // 2-opt must not increase the nearest-neighbour route distance.
+    Assert.True(
+        result.TotalDistanceKm <= result.NearestNeighbourDistanceKm + 1e-8);
 
-        // The reported 2-opt savings must match the two distances.
-        Assert.Equal(
-            result.NearestNeighbourDistanceKm - result.TotalDistanceKm,
-            result.TwoOptDistanceSavedKm,
-            8);
+    // Verify the reported 2-opt savings.
+    Assert.Equal(
+        result.NearestNeighbourDistanceKm - result.TotalDistanceKm,
+        result.TwoOptDistanceSavedKm,
+        8);
 
-        // Verify the overall savings against the original route.
-        Assert.Equal(
-            result.OriginalDistanceKm - result.TotalDistanceKm,
-            result.DistanceSavedKm,
-            8);
+    // Verify overall savings against the original route.
+    Assert.Equal(
+        result.OriginalDistanceKm - result.TotalDistanceKm,
+        result.DistanceSavedKm,
+        8);
 
-        Assert.Equal(
-            stopIds.OrderBy(id => id),
-            result.OptimizedRoute
-                .Select(location => location.Id)
-                .OrderBy(id => id));
+    // All four requested stops must appear in the result.
+    Assert.Equal(
+        new[] { "Stop A", "Stop B", "Stop C", "Stop D" }.OrderBy(name => name),
+        result.OptimizedRoute
+            .Select(location => location.Name)
+            .OrderBy(name => name));
 
-        Assert.True(
-            result.TotalDistanceKm < result.OriginalDistanceKm,
-            $"Expected 2-opt to improve the route, but the original " +
-            $"distance was {result.OriginalDistanceKm:F2} km and the " +
-            $"optimized distance was {result.TotalDistanceKm:F2} km.");
-    }
+    // The 2-opt result should improve on the original supplied order.
+    Assert.True(
+        result.TotalDistanceKm < result.OriginalDistanceKm,
+        $"Expected an improvement, but original distance was " +
+        $"{result.OriginalDistanceKm:F2} km and optimized distance was " +
+        $"{result.TotalDistanceKm:F2} km.");
+}
+
+
 
 
 [Fact]
 public async Task OptimizeRoute_ValidRequest_ReturnsOptimizedRoute()
 {
-    // Arrange: create an additional delivery location.
-    var newLocation = new
-    {
-        Name = "Pretoria Delivery Hub",
-        Latitude = -25.7479,
-        Longitude = 28.2293
-    };
-
-    var createResponse = await _client.PostAsJsonAsync(
-        "/api/locations",
-        newLocation);
-
-    createResponse.EnsureSuccessStatusCode();
-
-    var createdLocation = await createResponse.Content
-        .ReadFromJsonAsync<DeliveryLocation>();
-
-    Assert.NotNull(createdLocation);
-
-    // Act: optimize the route from Johannesburg.
+    // Arrange: define a route using custom coordinates.
     var request = new
     {
-        WarehouseId = 1,
-        DeliveryLocationIds = new[] { 2, createdLocation.Id }
+        StartLatitude = -26.2041,
+        StartLongitude = 28.0473,
+        StartName = "Johannesburg Warehouse",
+
+        EndLatitude = -26.2041,
+        EndLongitude = 28.0473,
+        EndName = "Johannesburg Warehouse",
+
+        Stops = new[]
+        {
+            new
+            {
+                Name = "Sandton Delivery Hub",
+                Latitude = -26.1076,
+                Longitude = 28.0567
+            },
+            new
+            {
+                Name = "Pretoria Delivery Hub",
+                Latitude = -25.7479,
+                Longitude = 28.2293
+            }
+        }
     };
 
+    // Act
     var response = await _client.PostAsJsonAsync(
-        "/api/routes/optimize",
-        request);
+        "/api/routes/optimize", request);
 
-    // Assert: verify the optimization result.
+    // Assert
     Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
     var result = await response.Content
@@ -197,65 +176,94 @@ public async Task OptimizeRoute_ValidRequest_ReturnsOptimizedRoute()
     Assert.True(result.TotalDistanceKm > 0);
     Assert.True(result.OriginalDistanceKm > 0);
 
-    // Every requested delivery stop must appear in the result.
+    // Every requested stop must appear in the optimized route.
     Assert.Equal(
-        new[] { 2, createdLocation.Id }.OrderBy(id => id),
+        new[] { "Sandton Delivery Hub", "Pretoria Delivery Hub" }
+            .OrderBy(name => name),
         result.OptimizedRoute
-            .Select(location => location.Id)
-            .OrderBy(id => id));
+            .Select(location => location.Name)
+            .OrderBy(name => name));
 
-    // Savings must equal original distance minus final distance.
+    // The route geometry must include start, stops and end.
+    Assert.Equal(4, result.RouteGeometry.Count);
+
+    // Verify the savings calculation.
     Assert.Equal(
         result.OriginalDistanceKm - result.TotalDistanceKm,
         result.DistanceSavedKm,
         8);
-
-    // Improvement percentage must match the distance reduction.
-    var expectedImprovement = result.OriginalDistanceKm > 0
-        ? (result.DistanceSavedKm / result.OriginalDistanceKm) * 100
-        : 0;
-
-    Assert.Equal(expectedImprovement, result.ImprovementPercentage, 8);
-
 }
 
+
+
 [Fact]
-public async Task OptimizeRoute_WarehouseDoesNotExist_ReturnsNotFound()
+public async Task OptimizeRoute_InvalidStartCoordinates_ReturnsBadRequest()
 {
-    // Arrange
+    // Arrange: provide an invalid starting latitude.
     var request = new
     {
-        WarehouseId = 9999,
-        DeliveryLocationIds = new[] { 2 }
+        StartLatitude = 95.0,
+        StartLongitude = 28.0473,
+        StartName = "Invalid Warehouse",
+
+        EndLatitude = -26.2041,
+        EndLongitude = 28.0473,
+        EndName = "Johannesburg Warehouse",
+
+        Stops = new[]
+        {
+            new
+            {
+                Name = "Sandton Delivery Hub",
+                Latitude = -26.1076,
+                Longitude = 28.0567
+            }
+        }
     };
 
     // Act
     var response = await _client.PostAsJsonAsync(
-        "/api/routes/optimize",
-        request);
+        "/api/routes/optimize", request);
 
     // Assert
-    Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 }
 
+
+
 [Fact]
-public async Task OptimizeRoute_DeliveryLocationDoesNotExist_ReturnsNotFound()
+public async Task OptimizeRoute_InvalidDeliveryCoordinates_ReturnsBadRequest()
 {
-    // Arrange: warehouse 1 exists, but location 9999 does not.
+    // Arrange: provide an invalid delivery longitude.
     var request = new
     {
-        WarehouseId = 1,
-        DeliveryLocationIds = new[] { 9999 }
+        StartLatitude = -26.2041,
+        StartLongitude = 28.0473,
+        StartName = "Johannesburg Warehouse",
+
+        EndLatitude = -26.2041,
+        EndLongitude = 28.0473,
+        EndName = "Johannesburg Warehouse",
+
+        Stops = new[]
+        {
+            new
+            {
+                Name = "Invalid Delivery Hub",
+                Latitude = -26.1076,
+                Longitude = 200.0
+            }
+        }
     };
 
     // Act
     var response = await _client.PostAsJsonAsync(
-        "/api/routes/optimize",
-        request);
+        "/api/routes/optimize", request);
 
     // Assert
-    Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 }
+
 
 
 [Fact]

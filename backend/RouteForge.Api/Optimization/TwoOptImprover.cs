@@ -12,6 +12,7 @@ public class TwoOptImprover
         return ImproveRoute(
             warehouse,
             route,
+            warehouse,
             DistanceCalculator.CalculateDistanceKm);
     }
 
@@ -20,7 +21,19 @@ public class TwoOptImprover
         List<DeliveryLocation> route,
         Func<DeliveryLocation, DeliveryLocation, double> getDistanceKm)
     {
-        // Work on a copy so the caller's route remains unchanged.
+        return ImproveRoute(
+            warehouse,
+            route,
+            warehouse,
+            getDistanceKm);
+    }
+
+    public List<DeliveryLocation> ImproveRoute(
+        DeliveryLocation start,
+        List<DeliveryLocation> route,
+        DeliveryLocation end,
+        Func<DeliveryLocation, DeliveryLocation, double> getDistanceKm)
+    {
         var improvedRoute = new List<DeliveryLocation>(route);
 
         if (improvedRoute.Count < 2)
@@ -39,16 +52,18 @@ public class TwoOptImprover
                 for (int j = i + 1; j < improvedRoute.Count; j++)
                 {
                     double currentDistance = CalculateRouteDistance(
-                        warehouse,
+                        start,
                         improvedRoute,
+                        end,
                         getDistanceKm);
 
-                    // Reverse this section to test an alternative route.
+                    // Reverse a section to test a different stop order.
                     improvedRoute.Reverse(i, j - i + 1);
 
                     double swappedDistance = CalculateRouteDistance(
-                        warehouse,
+                        start,
                         improvedRoute,
+                        end,
                         getDistanceKm);
 
                     if (swappedDistance < currentDistance - 1e-9)
@@ -57,7 +72,7 @@ public class TwoOptImprover
                     }
                     else
                     {
-                        // Keep the original order if it wasn't better.
+                        // Keep the original order if the change wasn't better.
                         improvedRoute.Reverse(i, j - i + 1);
                     }
                 }
@@ -69,12 +84,13 @@ public class TwoOptImprover
     }
 
     private static double CalculateRouteDistance(
-        DeliveryLocation warehouse,
+        DeliveryLocation start,
         List<DeliveryLocation> route,
+        DeliveryLocation end,
         Func<DeliveryLocation, DeliveryLocation, double> getDistanceKm)
     {
         double totalDistanceKm = 0;
-        var currentLocation = warehouse;
+        var currentLocation = start;
 
         foreach (var stop in route)
         {
@@ -82,8 +98,8 @@ public class TwoOptImprover
             currentLocation = stop;
         }
 
-        // Include the return journey to the warehouse.
-        totalDistanceKm += getDistanceKm(currentLocation, warehouse);
+        // Finish at the selected destination.
+        totalDistanceKm += getDistanceKm(currentLocation, end);
 
         return totalDistanceKm;
     }

@@ -5,7 +5,7 @@ using RouteForge.Api.DTOs;
 using RouteForge.Api.Models;
 using RouteForge.Api.Services;
 using RouteForge.Api.Optimization;
-using RouteForge.Api.Services;
+using RouteForge.Api.Enums;
 
 var builder = WebApplication.CreateBuilder(args);
     builder.Services.AddCors(options =>
@@ -41,6 +41,14 @@ builder.Services.AddHttpClient<OsrmRoutingService>(client =>
         "RouteForge/1.0 (route optimization portfolio project)");
 });
 
+builder.Services.AddHttpClient<AddressSearchService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "RouteForge/1.0 (route optimization portfolio project)");
+});
+
 var app = builder.Build();
 app.UseCors("AllowRouteForgeFrontend");
 
@@ -70,6 +78,117 @@ app.MapGet("/api/locations/{id:int}", async (
     return location is null
         ? Results.NotFound()
         : Results.Ok(location);
+});
+
+app.MapGet("/api/warehouses", async (RouteForgeDbContext dbContext) =>
+{
+    var warehouses = await dbContext.DeliveryLocations
+        .Where(location => location.Type == LocationType.Warehouse)
+        .ToListAsync();
+
+    return Results.Ok(warehouses);
+});
+
+app.MapPost("/api/warehouses", async (
+    CreateDeliveryLocationRequest request,
+    RouteForgeDbContext dbContext) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+    {
+        return Results.BadRequest("Warehouse name is required.");
+    }
+
+    if (!double.IsFinite(request.Latitude) ||
+        request.Latitude < -90 ||
+        request.Latitude > 90)
+    {
+        return Results.BadRequest("Latitude must be between -90 and 90.");
+    }
+
+    if (!double.IsFinite(request.Longitude) ||
+        request.Longitude < -180 ||
+        request.Longitude > 180)
+    {
+        return Results.BadRequest("Longitude must be between -180 and 180.");
+    }
+
+    var warehouse = new DeliveryLocation
+    {
+        Name = request.Name.Trim(),
+        Latitude = request.Latitude,
+        Longitude = request.Longitude,
+        Type = LocationType.Warehouse
+    };
+
+    dbContext.DeliveryLocations.Add(warehouse);
+    await dbContext.SaveChangesAsync();
+
+    return Results.Created(
+        $"/api/warehouses/{warehouse.Id}",
+        warehouse);
+});
+
+app.MapPut("/api/warehouses/{id:int}", async (
+    int id,
+    CreateDeliveryLocationRequest request,
+    RouteForgeDbContext dbContext) =>
+{
+    var warehouse = await dbContext.DeliveryLocations
+        .FirstOrDefaultAsync(location =>
+            location.Id == id &&
+            location.Type == LocationType.Warehouse);
+
+    if (warehouse is null)
+    {
+        return Results.NotFound("Warehouse not found.");
+    }
+
+    if (string.IsNullOrWhiteSpace(request.Name))
+    {
+        return Results.BadRequest("Warehouse name is required.");
+    }
+
+    if (!double.IsFinite(request.Latitude) ||
+        request.Latitude < -90 ||
+        request.Latitude > 90)
+    {
+        return Results.BadRequest("Latitude must be between -90 and 90.");
+    }
+
+    if (!double.IsFinite(request.Longitude) ||
+        request.Longitude < -180 ||
+        request.Longitude > 180)
+    {
+        return Results.BadRequest("Longitude must be between -180 and 180.");
+    }
+
+    warehouse.Name = request.Name.Trim();
+    warehouse.Latitude = request.Latitude;
+    warehouse.Longitude = request.Longitude;
+
+    await dbContext.SaveChangesAsync();
+
+    return Results.Ok(warehouse);
+});
+
+app.MapDelete("/api/warehouses/{id:int}", async (
+    int id,
+    RouteForgeDbContext dbContext) =>
+{
+    var warehouse = await dbContext.DeliveryLocations
+        .FirstOrDefaultAsync(location =>
+            location.Id == id &&
+            location.Type == LocationType.Warehouse);
+
+    if (warehouse is null)
+    {
+        return Results.NotFound("Warehouse not found.");
+    }
+
+    dbContext.DeliveryLocations.Remove(warehouse);
+    await dbContext.SaveChangesAsync();
+
+    return Results.NoContent();
 });
 
 // POST: Create a delivery location.
@@ -162,75 +281,88 @@ app.MapDelete("/api/locations/{id:int}", async (
 });
 
 // POST: Optimize a delivery route.
+
 app.MapPost("/api/routes/optimize", async (
     OptimizeRouteRequest request,
-    RouteForgeDbContext dbContext,
     RouteOptimizer optimizer,
     TwoOptImprover twoOptImprover,
     OsrmRoutingService osrmRoutingService,
     CancellationToken cancellationToken) =>
 {
-    if (request.WarehouseId <= 0)
-    {
-        return Results.BadRequest("A valid warehouse ID is required.");
-    }
-
-    if (request.DeliveryLocationIds is null)
-    {
-        return Results.BadRequest("Delivery location IDs are required.");
-    }
-
-    if (request.DeliveryLocationIds.Any(id => id <= 0))
+    if (request.Stops is null || request.Stops.Count == 0)
     {
         return Results.BadRequest(
-            "Delivery location IDs must be positive.");
+            "Please provide at least one delivery stop.");
     }
 
-    if (request.DeliveryLocationIds.Contains(request.WarehouseId))
+    if (request.Stops.Any(stop =>
+        string.IsNullOrWhiteSpace(stop.Name) ||
+        !double.IsFinite(stop.Latitude) ||
+        !double.IsFinite(stop.Longitude) ||
+        stop.Latitude is < -90 or > 90 ||
+        stop.Longitude is < -180 or > 180))
     {
         return Results.BadRequest(
-            "The warehouse cannot also be a delivery stop.");
+            "Each delivery stop must have a name and valid coordinates.");
     }
 
-    if (request.DeliveryLocationIds.Distinct().Count()
-        != request.DeliveryLocationIds.Count)
+    if (string.IsNullOrWhiteSpace(request.StartName) ||
+        !double.IsFinite(request.StartLatitude) ||
+        !double.IsFinite(request.StartLongitude) ||
+        request.StartLatitude is < -90 or > 90 ||
+        request.StartLongitude is < -180 or > 180)
     {
         return Results.BadRequest(
-            "Duplicate delivery location IDs are not allowed.");
+            "A valid starting location is required.");
     }
 
-    var warehouse = await dbContext.DeliveryLocations
-        .AsNoTracking()
-        .FirstOrDefaultAsync(location =>
-            location.Id == request.WarehouseId);
-
-    if (warehouse is null)
+    if (string.IsNullOrWhiteSpace(request.EndName) ||
+        !double.IsFinite(request.EndLatitude) ||
+        !double.IsFinite(request.EndLongitude) ||
+        request.EndLatitude is < -90 or > 90 ||
+        request.EndLongitude is < -180 or > 180)
     {
-        return Results.NotFound("Warehouse not found.");
+        return Results.BadRequest(
+            "A valid finishing location is required.");
     }
 
-    var deliveryStops = await dbContext.DeliveryLocations
-        .AsNoTracking()
-        .Where(location =>
-            request.DeliveryLocationIds.Contains(location.Id))
-        .ToListAsync();
-
-    if (deliveryStops.Count != request.DeliveryLocationIds.Count)
+    if (request.Stops.Count > 25)
     {
-        return Results.NotFound(
-            "One or more delivery locations were not found.");
+        return Results.BadRequest(
+            "A maximum of 25 delivery stops is supported.");
     }
 
-    // Preserve the exact order requested by the client.
-    var stopsById = deliveryStops.ToDictionary(location => location.Id);
+    var start = new DeliveryLocation
+    {
+        Id = 1,
+        Name = request.StartName.Trim(),
+        Latitude = request.StartLatitude,
+        Longitude = request.StartLongitude,
+        Type = LocationType.Warehouse
+    };
 
-    var originalOrder = request.DeliveryLocationIds
-        .Select(id => stopsById[id])
-        .ToList();
+    var stops = request.Stops.Select((stop, index) =>
+        new DeliveryLocation
+        {
+            Id = index + 2,
+            Name = stop.Name.Trim(),
+            Latitude = stop.Latitude,
+            Longitude = stop.Longitude,
+            Type = LocationType.Delivery
+        }).ToList();
 
-    // Build the list used to request the OSRM driving-distance matrix.
-    var locations = new List<DeliveryLocation> { warehouse };
-    locations.AddRange(originalOrder);
+    var end = new DeliveryLocation
+    {
+        Id = stops.Count + 2,
+        Name = request.EndName.Trim(),
+        Latitude = request.EndLatitude,
+        Longitude = request.EndLongitude,
+        Type = LocationType.Delivery
+    };
+
+    var locations = new List<DeliveryLocation> { start };
+    locations.AddRange(stops);
+    locations.Add(end);
 
     double[,] distanceMatrix;
 
@@ -240,7 +372,6 @@ app.MapPost("/api/routes/optimize", async (
             locations,
             cancellationToken);
     }
-    
     catch (HttpRequestException ex)
     {
         Console.WriteLine($"OSRM HTTP error: {ex}");
@@ -248,18 +379,18 @@ app.MapPost("/api/routes/optimize", async (
         return Results.Problem(
             statusCode: StatusCodes.Status503ServiceUnavailable,
             title: "Road routing service unavailable",
-            detail: "Could not contact the OSRM routing service. Please check the API console logs.");
+            detail: "Could not contact the OSRM routing service.");
     }
-
-    catch (InvalidOperationException)
+    catch (InvalidOperationException ex)
     {
+        Console.WriteLine($"OSRM distance error: {ex}");
+
         return Results.Problem(
             statusCode: StatusCodes.Status503ServiceUnavailable,
             title: "Road distances unavailable",
-            detail: "OSRM could not calculate a complete driving-distance matrix for these locations.");
+            detail: "OSRM could not calculate driving distances for these locations.");
     }
 
-    // Map each database ID to its position in the OSRM matrix.
     var locationIndices = locations
         .Select((location, index) => new
         {
@@ -268,7 +399,6 @@ app.MapPost("/api/routes/optimize", async (
         })
         .ToDictionary(item => item.Id, item => item.Index);
 
-    // Every algorithm will now use driving distances in kilometres.
     double GetRoadDistanceKm(
         DeliveryLocation from,
         DeliveryLocation to)
@@ -278,24 +408,25 @@ app.MapPost("/api/routes/optimize", async (
             locationIndices[to.Id]];
     }
 
-    // Run Nearest Neighbour using road distances.
-    var result = optimizer.OptimizeRoute(
-        warehouse,
-        originalOrder,
+    // Nearest Neighbour chooses the order of the delivery stops.
+   var result = optimizer.OptimizeRoute(
+        start,
+        stops,
+        end,
         GetRoadDistanceKm);
 
-    // Preserve the distance before 2-opt improvement.
     result.NearestNeighbourDistanceKm = result.TotalDistanceKm;
 
-    // Improve the route using the same road distances.
+    // 2-opt improves the stop order.
     result.OptimizedRoute = twoOptImprover.ImproveRoute(
-        warehouse,
+        start,
         result.OptimizedRoute,
+        end,
         GetRoadDistanceKm);
 
-    // Recalculate the final optimized round-trip distance.
+    // Calculate the final journey, ending at the selected destination.
     double totalDistanceKm = 0;
-    var currentLocation = warehouse;
+    var currentLocation = start;
 
     foreach (var stop in result.OptimizedRoute)
     {
@@ -303,51 +434,80 @@ app.MapPost("/api/routes/optimize", async (
         currentLocation = stop;
     }
 
-    // Include the return journey to the warehouse.
-    totalDistanceKm += GetRoadDistanceKm(
-        currentLocation,
-        warehouse);
+    totalDistanceKm += GetRoadDistanceKm(currentLocation, end);
 
-   
-result.TotalDistanceKm = totalDistanceKm;
+    result.TotalDistanceKm = totalDistanceKm;
 
-var optimizedLocations = new List<DeliveryLocation>
-{
-    warehouse
-};
+    // Include the custom finishing point in the returned route.
+    var optimizedLocations = new List<DeliveryLocation> { start };
+    optimizedLocations.AddRange(result.OptimizedRoute);
+    optimizedLocations.Add(end);
 
-optimizedLocations.AddRange(result.OptimizedRoute);
-optimizedLocations.Add(warehouse);
+    try
+    {
+        result.RouteGeometry =
+            await osrmRoutingService.GetRouteGeometryAsync(
+                optimizedLocations,
+                cancellationToken);
+    }
+    catch (HttpRequestException ex)
+    {
+        Console.WriteLine($"OSRM route geometry error: {ex}");
 
-try
-{
-    result.RouteGeometry =
-        await osrmRoutingService.GetRouteGeometryAsync(
-            optimizedLocations,
-            cancellationToken);
-}
-catch (HttpRequestException ex)
-{
-    Console.WriteLine($"OSRM route geometry error: {ex}");
+        return Results.Problem(
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            title: "Road geometry unavailable",
+            detail: "The route was optimized, but its road geometry could not be retrieved.");
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.WriteLine($"OSRM route geometry error: {ex}");
 
-    return Results.Problem(
-        statusCode: StatusCodes.Status503ServiceUnavailable,
-        title: "Road geometry unavailable",
-        detail: "The route was optimized, but its road geometry could not be retrieved.");
-}
-catch (InvalidOperationException ex)
-{
-    Console.WriteLine($"OSRM route geometry error: {ex}");
+        return Results.Problem(
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            title: "Road geometry unavailable",
+            detail: "OSRM could not return the road geometry.");
+    }
 
-    return Results.Problem(
-        statusCode: StatusCodes.Status503ServiceUnavailable,
-        title: "Road geometry unavailable",
-        detail: "The route was optimized, but OSRM could not return its road geometry.");
-}
-
-return Results.Ok(result);
-
+    return Results.Ok(result);
 });
+
+
+app.MapGet("/api/addresses/search",
+    async (
+        string q,
+        AddressSearchService addressSearchService,
+        CancellationToken cancellationToken) =>
+    {
+        if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 3)
+        {
+            return Results.Ok(new List<AddressSuggestion>());
+        }
+
+        try
+        {
+            var suggestions = await addressSearchService.SearchAsync(
+                q.Trim(),
+                cancellationToken);
+
+            return Results.Ok(suggestions);
+        }
+        catch (HttpRequestException)
+        {
+            return Results.Problem(
+                title: "Address search unavailable",
+                detail: "The address provider could not be reached.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (TaskCanceledException)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            return Results.Problem(
+                title: "Address search timed out",
+                detail: "Please try searching again.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    });
 
 app.Run();
 

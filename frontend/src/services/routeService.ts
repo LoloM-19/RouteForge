@@ -1,15 +1,27 @@
-import type { DeliveryLocation } from "./locationService";
 
 const API_BASE_URL = "http://localhost:5124/api";
 
-export interface OptimizeRouteRequest {
-  warehouseId: number;
-  deliveryLocationIds: number[];
+export interface RouteLocation {
+  name: string;
+  latitude: number;
+  longitude: number;
 }
 
+export interface OptimizeRouteRequest {
+  start: RouteLocation;
+  end: RouteLocation;
+  stops: RouteLocation[];
+}
 
 export interface RouteOptimizationResult {
-  optimizedRoute: DeliveryLocation[];
+  optimizedRoute: {
+    id: number;
+    name: string;
+    latitude: number;
+    longitude: number;
+    type: number;
+  }[];
+
   routeGeometry: [number, number][];
   totalDistanceKm: number;
   originalDistanceKm: number;
@@ -28,7 +40,21 @@ export async function optimizeRoute(
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(request),
+    body: JSON.stringify({
+      startLatitude: request.start.latitude,
+      startLongitude: request.start.longitude,
+      startName: request.start.name,
+
+      endLatitude: request.end.latitude,
+      endLongitude: request.end.longitude,
+      endName: request.end.name,
+
+      stops: request.stops.map((stop) => ({
+        name: stop.name,
+        latitude: stop.latitude,
+        longitude: stop.longitude,
+      })),
+    }),
   });
 
   if (!response.ok) {
