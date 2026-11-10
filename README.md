@@ -6,12 +6,12 @@ RouteForge is a logistics optimization platform designed to manage warehouses an
 
 The platform combines an ASP.NET Core Web API, PostgreSQL database, route optimization algorithms, and an interactive React map to demonstrate how software engineering and algorithmic optimization can improve real-world logistics operations.
 
-The project is being developed with an emphasis on clean architecture, input validation, automated testing, persistent data management, and practical optimization algorithms.
+The project is developed with an emphasis on clean architecture, input validation, automated testing, persistent data management, and practical optimization algorithms.
 
 ## Current Features
 
-- **Delivery location management:** Create, retrieve, update, and delete delivery locations through a REST API.
-- **Warehouse management:** Register warehouses, retrieve warehouse records, and manage them through dedicated API endpoints.
+- **Delivery location management:** Register, retrieve, search, update, and delete delivery locations through a dedicated frontend interface and REST API.
+- **Warehouse management:** Register, retrieve, update, and delete warehouses through a dedicated management interface and REST API.
 - **PostgreSQL persistence:** Store warehouse and delivery location data using Entity Framework Core.
 - **Location classification:** Distinguish between warehouses and delivery locations using a dedicated `LocationType` enumeration.
 - **Input validation:** Validate location names and geographic coordinates, rejecting invalid requests.
@@ -260,6 +260,10 @@ RouteForge/
 ├── frontend/
 │   └── src/
 │       ├── components/
+│       │   ├── AddressAutocomplete.tsx
+│       │   ├── DeliveryLocationManagement.tsx
+│       │   ├── RouteMap.tsx
+│       │   └── WarehouseManagement.tsx
 │       ├── services/
 │       ├── App.tsx
 │       └── App.css
@@ -270,22 +274,29 @@ RouteForge/
 
 ## Development Roadmap
 
+### Completed
+
 - [x] ASP.NET Core Web API foundation
 - [x] PostgreSQL database integration
 - [x] Entity Framework Core migrations
 - [x] Delivery location CRUD endpoints
+- [x] Warehouse CRUD endpoints
 - [x] Nearest Neighbour route optimization
 - [x] 2-opt route improvement
 - [x] OSRM road-distance integration
 - [x] Interactive route visualization
 - [x] Custom start and end locations
 - [x] Address autocomplete
-- [x] Warehouse registration and management API
-- [x] Warehouse registration frontend
+- [x] Warehouse management frontend
+- [x] Delivery location management frontend
 - [x] Frontend and backend integration
 - [x] Automated API and optimization tests
-- [ ] Warehouse editing and deletion interface
-- [ ] Delivery location management interface
+
+### Planned
+
+- [ ] Select registered delivery locations directly in the Route Planner
+- [ ] Support combinations of saved and manually entered destinations
+- [ ] Duplicate destination prevention
 - [ ] Saved routes and route history
 - [ ] Dashboard analytics and performance metrics
 - [ ] User authentication and role-based access control
@@ -302,9 +313,15 @@ These services require an internet connection. Their public instances are used d
 
 ## Project Status
 
-RouteForge is an active development project. Its core backend, database integration, route optimization engine, interactive map, and initial warehouse management workflow are implemented.
+RouteForge is an actively developed logistics optimization platform.
 
-The next development phase focuses on completing warehouse management through the frontend, expanding delivery location management, and introducing saved route history and dashboard analytics.
+The core application currently includes an integrated ASP.NET Core Web API, PostgreSQL persistence, warehouse and delivery location management interfaces, address autocomplete, road-distance calculations, and route optimization using Nearest Neighbour and 2-opt algorithms.
+
+The frontend provides interactive route visualization and dedicated interfaces for managing warehouses and delivery locations.
+
+The next development phase focuses on integrating registered delivery locations into route planning, introducing route history, and expanding dashboard analytics.
+
+Further planned improvements include authentication, role-based access control, and production deployment.
 
 ---
 
