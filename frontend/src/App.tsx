@@ -10,6 +10,7 @@ import {
 import { getWarehouses, type Warehouse } from "./services/warehouseService";
 import "./App.css";
 import WarehouseManagement from "./components/WarehouseManagement";
+import DeliveryLocationManagement from "./components/DeliveryLocationManagement";
 
 interface StopEntry {
   id: number;
@@ -536,14 +537,9 @@ function App() {
         )}
 
         {activePage === "locations" && (
-            <section className="map-panel">
-                <div className="panel-header">
-                    <div>
-                        <h2>Delivery Locations</h2>
-                        <p>Delivery location management will appear here.</p>
-                    </div>
-                </div>
-            </section>
+            <DeliveryLocationManagement
+                onLocationsChanged={clearResult}
+            />
         )}
 
         <footer className="page-footer">
